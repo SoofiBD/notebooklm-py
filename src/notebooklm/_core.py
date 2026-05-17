@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import math
-import random
+import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
 import time
 import warnings
@@ -938,9 +938,14 @@ class ClientCore:
 
         The adapters intentionally resolve through this module at call time so
         existing tests and private callers that monkeypatch
-        ``notebooklm._core.is_auth_error``, ``notebooklm._core.asyncio.sleep``,
-        or ``notebooklm._core.random.uniform`` still affect live transport
-        behavior after the collaborator has been constructed.
+        ``notebooklm._core.is_auth_error`` or ``notebooklm._core.asyncio.sleep``
+        still affect live transport behavior after the collaborator has been
+        constructed. Backoff jitter routes through ``notebooklm._backoff``,
+        which in turn calls ``random.uniform`` on the shared module.
+        ``tests/unit/test_core_transport.py`` relies on monkeypatching
+        ``notebooklm._core.random.uniform`` to reach that jitter path; keep the
+        otherwise-unused module import so the path stays available. Attribute
+        patches on the singleton ``random`` module are visible to all importers.
         """
         transport = getattr(self, "_authed_transport", None)
         if transport is None:
@@ -948,7 +953,6 @@ class ClientCore:
                 self,
                 is_auth_error=lambda exc: is_auth_error(exc),
                 sleep=lambda seconds: asyncio.sleep(seconds),
-                uniform=lambda low, high: random.uniform(low, high),  # noqa: S311 # nosec B311
                 logger=logger,
             )
             self._authed_transport = transport
@@ -1090,6 +1094,14 @@ class ClientCore:
         ``self._http_client = None`` runs in an inner ``finally`` so
         the instance is consistently marked closed even if the
         shielded ``aclose`` itself raises.
+
+        Poll-task drain: in-flight artifact poll tasks held by
+        :attr:`poll_registry` are cancelled and awaited before the HTTP
+        client is torn down. Without this, a leader poll waking mid-aclose
+        would issue a request against an already-closed transport and
+        surface as a confusing httpx error in the user's logs. The drain
+        uses ``return_exceptions=True`` so a single misbehaving task can't
+        block the rest of the close sequence.
         """
         try:
             # Stop the keepalive task before tearing down the HTTP client so
@@ -1098,6 +1110,15 @@ class ClientCore:
                 self._keepalive_task.cancel()
                 await asyncio.gather(self._keepalive_task, return_exceptions=True)
                 self._keepalive_task = None
+
+            # Drain in-flight artifact poll tasks. Snapshot first so concurrent
+            # registry mutations (a finishing leader removing its entry) don't
+            # race with the cancel/gather pair.
+            poll_tasks = self.poll_registry.active_tasks()
+            if poll_tasks:
+                for task in poll_tasks:
+                    task.cancel()
+                await asyncio.gather(*poll_tasks, return_exceptions=True)
 
             if self._http_client:
                 try:

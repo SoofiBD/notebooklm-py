@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, TypeAlias
+from urllib.parse import urlparse
 
 import httpx
 
@@ -111,6 +112,61 @@ _auth_domain_priority = _cookie_policy._auth_domain_priority
 _is_google_domain = _cookie_policy._is_google_domain
 _is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
 _is_allowed_cookie_domain = _cookie_policy._is_allowed_cookie_domain
+
+
+# Public surface for ``from notebooklm.auth import *`` and for downstream
+# static-analysis tools (mypy, ruff F401 checks). This is the audited set of
+# names externally imported by the package, tests, docs, and the CLI as of
+# 2026-05-17. Underscore-prefixed names remain accessible on the module — some
+# tests reach for them as whitebox affordances — but are intentionally NOT
+# blessed here. See ``tests/unit/test_public_surface.py``: two complementary
+# tests pin this list — ``test_auth_module_has_expected_all`` snapshot-checks
+# the exact ordering, and ``test_auth_all_matches_external_imports_audit``
+# AST-scans ``src/``, ``tests/``, ``docs/`` to fail if a new public name is
+# imported externally without being added here.
+__all__ = [
+    "Account",
+    "advance_cookie_snapshot_after_save",
+    "ALLOWED_COOKIE_DOMAINS",
+    "AuthTokens",
+    "authuser_query",
+    "build_cookie_jar",
+    "build_httpx_cookies_from_storage",
+    "clear_account_metadata",
+    "convert_rookiepy_cookies_to_storage_state",
+    "CookieSaveResult",
+    "CookieSnapshot",
+    "CookieSnapshotKey",
+    "CookieSnapshotValue",
+    "enumerate_accounts",
+    "extract_cookies_from_storage",
+    "extract_cookies_with_domains",
+    "extract_csrf_from_html",
+    "extract_email_from_html",
+    "extract_session_id_from_html",
+    "extract_wiz_field",
+    "fetch_tokens",
+    "fetch_tokens_with_domains",
+    "format_authuser_value",
+    "get_account_email_for_storage",
+    "get_authuser_for_storage",
+    "GOOGLE_REGIONAL_CCTLDS",
+    "KEEPALIVE_ROTATE_URL",
+    "load_auth_from_storage",
+    "load_httpx_cookies",
+    "MINIMUM_REQUIRED_COOKIES",
+    "normalize_cookie_map",
+    "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+    "OPTIONAL_COOKIE_DOMAINS",
+    "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+    "read_account_metadata",
+    "REQUIRED_COOKIE_DOMAINS",
+    "save_cookies_to_storage",
+    "snapshot_cookie_jar",
+    "write_account_metadata",
+]
 
 
 _AUTH_STORAGE_FACADE_NAMES = {
@@ -456,6 +512,34 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
     return None
 
 
+def _safe_url(url: str) -> str:
+    """Return ``url`` stripped of credential-shaped parts for error display.
+
+    Auth-handshake URLs can carry credentials in three positions, all of
+    which we strip:
+
+    * **Query string** — ``f.sid=...``, ``continue=...``, ``access_token=...``.
+    * **Fragment** — OAuth implicit-flow tokens (``#access_token=...``).
+    * **Userinfo** — ``https://TOKEN@host/...`` shapes; ``parsed.netloc``
+      preserves the userinfo, so we rebuild from ``hostname`` + optional
+      port instead of trusting ``netloc`` directly.
+
+    The surviving ``scheme://host[:port]/path`` is enough context for an
+    operator to recognize which endpoint failed without leaking session
+    state. Empty input passes through verbatim so error messages with the
+    default ``final_url=""`` still render cleanly instead of degenerating to
+    ``"://"``.
+    """
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    # hostname strips userinfo; port survives separately. Both can be None
+    # on malformed input, in which case we degrade gracefully to "scheme:///path".
+    host = parsed.hostname or ""
+    netloc = f"{host}:{parsed.port}" if parsed.port is not None else host
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
+
+
 def extract_csrf_from_html(html: str, final_url: str = "") -> str:
     """
     Extract CSRF token (SNlM0e) from NotebookLM page HTML.
@@ -491,7 +575,7 @@ def extract_csrf_from_html(html: str, final_url: str = "") -> str:
             "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
         )
     raise ValueError(
-        f"CSRF token not found in HTML. Final URL: {final_url}\n"
+        f"CSRF token not found in HTML. Final URL: {_safe_url(final_url)}\n"
         "This may indicate the page structure has changed."
     )
 
@@ -524,7 +608,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
             "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
         )
     raise ValueError(
-        f"Session ID not found in HTML. Final URL: {final_url}\n"
+        f"Session ID not found in HTML. Final URL: {_safe_url(final_url)}\n"
         "This may indicate the page structure has changed."
     )
 
@@ -1458,7 +1542,7 @@ async def _fetch_tokens_with_jar(
         if is_google_auth_redirect(final_url):
             raise ValueError(
                 "Authentication expired or invalid. "
-                "Redirected to: " + final_url + "\n"
+                "Redirected to: " + _safe_url(final_url) + "\n"
                 "Run 'notebooklm login' to re-authenticate."
             )
 

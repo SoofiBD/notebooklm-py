@@ -65,6 +65,7 @@ from .exceptions import (
     AuthExtractionError,
     # Domain: Chat
     ChatError,
+    ChatResponseParseError,
     ClientError,
     # Validation/Config
     ConfigurationError,
@@ -83,6 +84,7 @@ from .exceptions import (
     # Domain: Research
     ResearchTaskMismatchError,
     RPCError,
+    RPCResponseTooLargeError,
     RPCTimeoutError,
     ServerError,
     # Domain: Sources
@@ -147,6 +149,9 @@ from .types import (
     VideoStyle,
 )
 
+# Public API: Utility helpers
+from .utils import resolve_chat_reference_passage
+
 __all__ = [
     "__version__",
     # Client (main entry point)
@@ -182,6 +187,8 @@ __all__ = [
     "CitedSourceSelection",
     "SharedUser",
     "ShareStatus",
+    # Utility helpers
+    "resolve_chat_reference_passage",
     # Base Exceptions
     "NotebookLMError",
     "ValidationError",
@@ -194,6 +201,7 @@ __all__ = [
     "AuthExtractionError",
     "NetworkError",
     "RPCTimeoutError",
+    "RPCResponseTooLargeError",
     "RateLimitError",
     "ServerError",
     "ClientError",
@@ -205,6 +213,7 @@ __all__ = [
     "NotebookLimitError",
     # Domain Exceptions: Chat
     "ChatError",
+    "ChatResponseParseError",
     # Domain Exceptions: Sources
     "SourceError",
     "SourceAddError",
