@@ -25,6 +25,18 @@ def notes_api(mock_core):
     return NotesAPI(mock_core)
 
 
+def test_notes_api_preserves_falsy_mind_map_service(mock_core):
+    """NotesAPI should preserve a caller-supplied falsy mind-map service instead of replacing it."""
+
+    class FalsyService:
+        def __bool__(self):
+            return False
+
+    falsy_service = FalsyService()
+    api = NotesAPI(mock_core, mind_map_service=falsy_service)
+    assert api._mind_map_service is falsy_service
+
+
 class TestMindMapCreateNotePrimitive:
     """Characterize the shared mind-map note primitive before Phase 9 movement."""
 
