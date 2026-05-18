@@ -225,5 +225,3 @@ docs/
 
 > When adding or modifying a CLI command, follow the [CLI Exit-Code Convention](docs/cli-exit-codes.md) — the policy table and the two intentional exceptions (`source stale`, `source wait`) are binding.
 
-
-test
